@@ -21,22 +21,6 @@
 
 ---
 
-### BUG-01 — Hard-coded Google Colab path
-**Severity:** CRITICAL
-**File:** `notebook/main.ipynb` — Cell 4
-**Line:**
-```python
-DATA_PATH = '/content/diabetic_data.csv'
-```
-**Problem:** This is an absolute Google Colab path. Running the notebook locally will throw `FileNotFoundError` immediately. Every teammate who runs this outside Colab hits this before any code executes.
-
-**Fix:**
-```python
-DATA_PATH = '../data/diabetic_data.csv'
-```
-
----
-
 ### BUG-02 — Markdown says "Six columns" but seven are dropped
 **Severity:** LOW
 **File:** `notebook/main.ipynb` — Markdown cell before Cell 8
@@ -151,70 +135,6 @@ This is a different and simpler formulation. It is not wrong for a course projec
 
 ---
 
-## Stage 3 — Neural Network Architecture (`notebook/main.ipynb` + `tabddpm_model.py`, Jiten)
-
----
-
-### BUG-09 — Model class is defined twice; notebook does not import from `tabddpm_model.py`
-**Severity:** MEDIUM
-**File:** `notebook/main.ipynb` — Cells 39, 41, 43 vs. `notebook/tabddpm_model.py`
-**Problem:** `SinusoidalTimestepEmbedding`, `ResidualBlock`, and `TabDDPMDenoiser` are defined from scratch in the notebook cells AND exist in `tabddpm_model.py`. The notebook never does `from tabddpm_model import TabDDPMDenoiser`. If `tabddpm_model.py` is updated (e.g., Rohith changes a hyperparameter for training), the notebook silently uses the old inline definition. The two copies will drift apart.
-
-**Fix:** Remove the inline class definitions from the notebook and replace with:
-```python
-import sys
-sys.path.insert(0, '.')
-from tabddpm_model import TabDDPMDenoiser, SinusoidalTimestepEmbedding, ResidualBlock
-```
-
----
-
-### BUG-10 — Hard-coded Google Colab path in Stage 3
-**Severity:** CRITICAL
-**File:** `notebook/main.ipynb` — Cell 37 (Stage 3 import cell)
-**Line:**
-```python
-with open('/content/diffusion_config.pkl', 'rb') as f:
-```
-**Problem:** Same class of bug as BUG-01. The file is at `../models/diffusion_config.pkl` (or needs to be copied there from Anum's output). Running this cell locally throws `FileNotFoundError` immediately.
-
-**Fix:**
-```python
-with open('../models/diffusion_config.pkl', 'rb') as f:
-```
-
----
-
-### BUG-11 — Class conditioning test uses only 3 SGD steps on random noise; assertion is trivially weak
-**Severity:** MEDIUM
-**File:** `notebook/main.ipynb` — Cell 43 (TabDDPMDenoiser full check)
-**Lines:**
-```python
-optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
-for _ in range(3):
-    model.zero_grad()
-    p = model(x_dummy, t_dummy, torch.zeros(BATCH, dtype=torch.long))
-    F.mse_loss(p, torch.randn_like(p)).backward()
-    optimizer.step()
-
-diff = (out_y0 - out_y1).abs().mean().item()
-print(f'3. Class cond   : mean |y0-y1| = {diff:.6f}   --> {"PASS" if diff > 0 else "FAIL"}')
-```
-**Problem:** After 3 gradient steps against *random* targets, any non-zero weight change will make `y=0` and `y=1` outputs different — this is trivially guaranteed by the random label noise, not by meaningful class learning. The test will pass even if the class embedding is wired incorrectly. The threshold `diff > 0` is also too loose.
-
-**Fix:** A proper test verifies that the model is actually influenced by the class label, not just that weights changed:
-```python
-# After training on real data, the class embedding should produce
-# structurally different predictions for the two classes.
-# At minimum, verify the class embedding parameters are part of the
-# computation graph and receive gradients.
-assert model.class_emb.weight.grad is not None, "class_emb receives no gradient"
-assert model.class_emb.weight.grad.abs().sum() > 0, "class_emb gradient is all zeros"
-print("Class embedding gradient check: PASS")
-```
-
----
-
 ## Missing Stages — Not Implemented Anywhere
 
 ---
@@ -302,7 +222,6 @@ Without this, no synthetic data can be produced for SMOTE/CTGAN/TabDDPM comparis
 
 | ID | Stage | Owner | Severity | Type |
 |---|---|---|---|---|
-| BUG-01 | Stage 1 | Rohith | CRITICAL | Hard-coded Colab path |
 | BUG-02 | Stage 1 | Rohith | LOW | Wrong column count in docs |
 | BUG-03 | Stage 1 | Rohith | MEDIUM | Deprecated pandas API |
 | BUG-04 | Stage 1 | Rohith | LOW | Unreproducible figure in repo |
@@ -310,9 +229,6 @@ Without this, no synthetic data can be produced for SMOTE/CTGAN/TabDDPM comparis
 | BUG-06 | Forward process | Anum | MEDIUM | Test with no assertion |
 | BUG-07 | Forward process | Anum | HIGH | Diverges from TabDDPM paper formulation |
 | BUG-08 | Forward process | Anum | HIGH | Disconnected folder, no integration |
-| BUG-09 | Stage 3 | Jiten | MEDIUM | Duplicate class definitions; no import |
-| BUG-10 | Stage 3 | Jiten | CRITICAL | Hard-coded Colab path |
-| BUG-11 | Stage 3 | Jiten | MEDIUM | Trivially weak class conditioning test |
 | MISSING-01 | Stage 4 | Rohith | CRITICAL | Training loop not implemented |
 | MISSING-02 | Stage 4 | Rohith | CRITICAL | Reverse diffusion / sampling not implemented |
 | MISSING-03 | Stage 5 | ? | CRITICAL | SMOTE not implemented |
@@ -327,10 +243,8 @@ Without this, no synthetic data can be produced for SMOTE/CTGAN/TabDDPM comparis
 1. **MISSING-01, MISSING-02** — Rohith must build the training loop and sampling loop first; everything else depends on it.
 2. **BUG-05** — Fix the 1-indexed K issue before training, or all generated categoricals will occasionally contain invalid values.
 3. **BUG-08** — Integrate Anum's forward process into `main.ipynb` so the pipeline is runnable end-to-end.
-4. **BUG-01, BUG-10** — Fix Colab paths so the notebook runs locally.
-5. **MISSING-03, MISSING-04** — Implement SMOTE and CTGAN baselines.
-6. **MISSING-05, MISSING-06** — Augmented training and evaluation.
-7. **BUG-07** — Address or acknowledge the diffusion formulation divergence in the report.
-8. **BUG-09** — Remove duplicate class definitions from the notebook.
-9. **BUG-03, BUG-06, BUG-11** — Polish fixes (deprecated API, weak tests).
-10. **BUG-02, BUG-04** — Documentation and cleanup.
+4. **MISSING-03, MISSING-04** — Implement SMOTE and CTGAN baselines.
+5. **MISSING-05, MISSING-06** — Augmented training and evaluation.
+6. **BUG-07** — Address or acknowledge the diffusion formulation divergence in the report.
+7. **BUG-03, BUG-06** — Polish fixes (deprecated API, weak tests).
+8. **BUG-02, BUG-04** — Documentation and cleanup.

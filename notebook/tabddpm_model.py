@@ -1,6 +1,5 @@
 """
 tabddpm_model.py — TabDDPM Denoiser Architecture
-Owner: Jiten Bhalavat
 
 Usage (Rohith's training loop):
     from tabddpm_model import TabDDPMDenoiser
@@ -23,6 +22,7 @@ Usage (Rohith's training loop):
 import math
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 class SinusoidalTimestepEmbedding(nn.Module):
@@ -209,3 +209,49 @@ class TabDDPMDenoiser(nn.Module):
             h = block(h, cond)
 
         return self.output_head(h)                         # (batch, num_numeric)
+
+
+def validate_class_conditioning(
+    model: TabDDPMDenoiser,
+    batch_size: int,
+    total_features: int,
+    max_timestep: int = 1000,
+    warmup_steps: int = 5,
+    lr: float = 1e-3,
+) -> float:
+    """
+    Robust class-conditioning check for early-stage model validation.
+
+    Why warm-up is needed:
+    Residual branches are near-identity at initialization (linear2 is zero-init),
+    so class embedding gradients can be zero on the very first backward pass.
+    A short warm-up makes the check reliable and avoids false negatives.
+
+    Returns:
+        float: sum of absolute gradients on model.class_emb weights.
+    """
+    device = next(model.parameters()).device
+    model.train()
+
+    x_dummy = torch.zeros(batch_size, total_features, device=device)
+    t_dummy = torch.randint(0, max_timestep, (batch_size,), device=device)
+    y_mix = torch.randint(0, 2, (batch_size,), dtype=torch.long, device=device)
+
+    class_target = (2 * y_mix.float() - 1.0).unsqueeze(1).repeat(1, model.num_numeric) * 0.1
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+
+    for _ in range(warmup_steps):
+        optimizer.zero_grad()
+        pred = model(x_dummy, t_dummy, y_mix)
+        F.mse_loss(pred, class_target).backward()
+        optimizer.step()
+
+    model.zero_grad()
+    post_warmup_loss = model(x_dummy, t_dummy, y_mix).mean()
+    post_warmup_loss.backward()
+
+    grad = model.class_emb.weight.grad
+    grad_sum = 0.0 if grad is None else grad.abs().sum().item()
+    if grad_sum <= 0:
+        raise AssertionError("FAIL: class_emb receives no gradient after warm-up")
+    return grad_sum
