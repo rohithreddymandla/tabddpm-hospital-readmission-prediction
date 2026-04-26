@@ -1,153 +1,101 @@
-# TabDDPM: Using Diffusion Models to Generate Synthetic Patient Data for Hospital Readmission Prediction
+# TabDDPM for Hospital Readmission Prediction
 
-**Group 5 — DATA 612 Final Project**
-Taneir Arani · Jiten Bhalavat · Rohith Mandla · Anum Sagheer · Simi Shrivastava
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
+![PyTorch](https://img.shields.io/badge/PyTorch-TabDDPM-red)
+![Task](https://img.shields.io/badge/Task-Tabular%20Binary%20Classification-green)
+![Status](https://img.shields.io/badge/Status-Academic%20Project-orange)
 
----
+This repository evaluates whether diffusion-generated synthetic tabular data can improve prediction of 30-day hospital readmission (`<30`) in an imbalanced clinical dataset.
 
-## Overview
+## Objective
 
-Hospital readmission within 30 days is both costly and clinically significant. In the Diabetes 130-US Hospitals dataset, only **11% of patients** were readmitted within 30 days — a severe class imbalance that causes standard classifiers to ignore the exact patients that matter most.
+The target class (`readmitted = <30`) is a minority class.  
+The project compares data balancing and generation strategies to improve minority-class detection:
 
-This project investigates whether **TabDDPM** (Tabular Denoising Diffusion Probabilistic Model, Kotelnikov et al. ICML 2023) can generate synthetic minority-class patients realistic enough to improve downstream classifier performance. We compare TabDDPM against three baselines:
-
-| Method | Description |
-|---|---|
-| **No fix** | Train XGBoost on the raw imbalanced data |
-| **SMOTE** | Interpolate between real minority-class patients |
-| **CTGAN** | GAN-based conditional tabular data generator |
-| **TabDDPM** | Diffusion-model-based conditional tabular generator *(ours)* |
-
----
+- Baseline (no augmentation)
+- SMOTE
+- CTGAN
+- TabDDPM (class-conditioned denoising diffusion model)
 
 ## Dataset
 
-This project uses the Hospital Readmission dataset from Kaggle.
+- Source: Diabetes 130-US hospitals dataset (`data/diabetic_data.csv`)
+- Size: 101,766 records, 50 columns
+- Target: `readmitted` (`NO`, `>30`, `<30`)
+- Binary setup for modeling: `<30` vs all others
 
-Download it from:
-https://www.kaggle.com/datasets/brandao/diabetes?resource=download
+## Method Overview
 
-**Diabetes 130-US Hospitals** (UCI / Kaggle)
-- 101,766 patient records from 130 US hospitals (1999–2008)
-- 50 features: demographics, diagnoses (ICD codes), medications, lab results
-- Target: `readmitted` — `NO`, `<30` (within 30 days), `>30` (after 30 days)
-- Class split: ~11% `<30`, ~89% other
+1. Data preprocessing and feature handling
+2. Baseline XGBoost model on imbalanced data
+3. Synthetic minority generation with SMOTE / CTGAN / TabDDPM
+4. Train downstream classifier on augmented data
+5. Compare metrics on held-out test data
 
----
+## Repository Structure
 
-## Project Structure
-
-```
+```text
 tabddpm-hospital-readmission-prediction/
+├── anum-forward-process/
+│   ├── data/
+│   ├── models/
+│   ├── notebooks/
+│   │   └── forward_process.ipynb
+│   └── results/
 ├── data/
-│   └── diabetic_data.csv          # Raw dataset (do not modify)
-├── models/                        # Saved model checkpoints (gitignored)
-├── results/
-│   ├── figures/                   # Generated plots (gitignored)
-│   └── metrics/                   # Evaluation CSVs / JSON (gitignored)
+│   ├── diabetic_data.csv
+│   ├── description.pdf
+│   └── processed/
+├── models/
+│   ├── diffusion_config.pkl
+│   ├── label_encoders.pkl
+│   ├── scaler.pkl
+│   └── xgboost_baseline.pkl
 ├── notebook/
-│   └── main.ipynb                 # End-to-end notebook
+│   ├── main.ipynb
+│   └── tabddpm_model.py
+├── results/
+│   ├── figures/
+│   └── metrics/
+├── BUG_REPORT.md
+├── MSML612_Project_Proposal.pdf
+├── TabDDPM-proposal.pdf
 ├── requirements.txt
-├── CLAUDE.md                      # AI assistant context file
 └── README.md
 ```
 
----
+## Key Files
 
-## ML Workflow
-
-```
-Raw Data
-   │
-   ▼
-1. Preprocessing
-   • Drop identifiers (encounter_id, patient_nbr)
-   • Replace "?" with NaN; impute or drop
-   • Encode categoricals (label / one-hot)
-   • Scale numerics (StandardScaler)
-   • Stratified 80/20 train-test split
-   │
-   ▼
-2. Baseline Classifier (no augmentation)
-   • XGBoost on imbalanced training set
-   • Record F1 (<30 class) and AUC-ROC
-   │
-   ▼
-3. Synthetic Data Generation
-   ├── SMOTE       (imbalanced-learn)
-   ├── CTGAN       (ctgan / sdv)
-   └── TabDDPM     (PyTorch, implemented from scratch)
-         • Forward: add Gaussian noise over T=1000 steps (numerical cols)
-         • Forward: multinomial diffusion (categorical cols)
-         • Reverse: U-Net-style MLP predicts added noise (class-conditioned)
-         • Generate at 50%, 100%, 200% minority-class augmentation levels
-   │
-   ▼
-4. Augmented Classifiers
-   • Retrain XGBoost on real + synthetic training data for each method × level
-   • 5 random seeds per experiment; report mean ± std
-   │
-   ▼
-5. Evaluation
-   • Primary:   F1 score on the <30-day readmission class
-   • Secondary: AUC-ROC
-   • Fidelity:  Column-wise distribution plots (real vs. synthetic)
-                Jensen-Shannon divergence per column
-                t-SNE / UMAP 2-D embedding overlay
-   • Stress:    Train entirely on synthetic, test on real patients
-```
-
----
+- `notebook/main.ipynb`: end-to-end workflow and experiments
+- `notebook/tabddpm_model.py`: TabDDPM denoiser architecture module
+- `models/diffusion_config.pkl`: saved diffusion metadata/config
+- `results/metrics/`: experiment outputs
+- `results/figures/`: charts and visual diagnostics
 
 ## Setup
-
-### 1. Clone and enter the repo
-
-```bash
-git clone <repo-url>
-cd tabddpm-hospital-readmission-prediction
-```
-
-### 2. Create a virtual environment
-
-```bash
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-```
-
-### 3. Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-> **GPU note:** if you have a CUDA-capable GPU, install the matching `torch` wheel from pytorch.org before running `pip install -r requirements.txt`.
+Then run the notebook:
 
-### 4. Launch Jupyter
-
-```bash
-jupyter lab
-```
-
-Open `notebook/main.ipynb` and run cells top to bottom.
-
----
+- `notebook/main.ipynb`
 
 ## Evaluation Metrics
 
-| Metric | Purpose |
-|---|---|
-| F1 (`<30` class) | Primary — how well the model catches high-risk patients |
-| AUC-ROC | Overall ranking quality |
-| Jensen-Shannon divergence | Fidelity of generated distributions per column |
-| t-SNE overlay | Visual fidelity check |
-| Synth-train / real-test F1 | Stress test of generative quality |
+- F1-score (minority class `<30`) - primary metric
+- ROC-AUC
+- Confusion matrix
+- Distribution and fidelity checks for synthetic data
 
----
+## Results Snapshot
 
-## References
+Current baseline outputs are available in:
 
-1. Kotelnikov et al. (2023). *TabDDPM: Modelling Tabular Data with Diffusion Models.* ICML 2023. https://arxiv.org/abs/2209.15421
-2. Ho et al. (2020). *Denoising Diffusion Probabilistic Models.* NeurIPS 2020. https://arxiv.org/abs/2006.11239
-3. Xu et al. (2019). *Modeling Tabular Data using Conditional GAN.* NeurIPS 2019. https://arxiv.org/abs/1907.00503
-4. Chawla et al. (2002). *SMOTE: Synthetic Minority Over-sampling Technique.* JAIR. https://arxiv.org/abs/1106.1813
+- `results/metrics/baseline_results.json`
+- `results/figures/baseline_auc_roc.png`
+- `results/figures/baseline_confusion_matrix.png`
+- `results/figures/baseline_feature_importance.png`
+
+Add final comparison tables/plots here when SMOTE, CTGAN, and TabDDPM runs are finalized.
