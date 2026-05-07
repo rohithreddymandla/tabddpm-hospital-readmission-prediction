@@ -1,0 +1,11 @@
+{
+  "method": "smote",
+  "f1_score": 0.0525,
+  "roc_auc": 0.6525,
+  "confusion_matrix": {
+    "true_negatives": 17530,
+    "false_positives": 75,
+    "false_negatives": 2200,
+    "true_positives": 63
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "method": "tabddpm_100pct",
+  "f1_score": 0.0477,
+  "roc_auc": 0.6616,
+  "confusion_matrix": {
+    "true_negatives": 17536,
+    "false_positives": 69,
+    "false_negatives": 2206,
+    "true_positives": 57
+  }
+}

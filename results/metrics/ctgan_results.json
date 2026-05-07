@@ -1,0 +1,11 @@
+{
+  "method": "ctgan",
+  "f1_score": 0.048,
+  "roc_auc": 0.6599,
+  "confusion_matrix": {
+    "true_negatives": 17550,
+    "false_positives": 55,
+    "false_negatives": 2206,
+    "true_positives": 57
+  }
+}
